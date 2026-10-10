@@ -1,7 +1,14 @@
 import { commandBus, CommandHandler } from '../core/CommandBus';
 import { useCyberpunkStore } from '../store/useCyberpunkStore';
 import { sound } from '../lib/sound';
-import { askNeural } from '../lib/ai';
+import {
+  askNeural,
+  listProviders,
+  getActiveProvider,
+  setActiveProvider,
+  isValidProvider,
+  type AiProviderId,
+} from '../lib/ai';
 import { ACHIEVEMENTS } from '../lib/achievements';
 import { resolvePath, listDir, readFile, treeLines, getNode } from '../lib/fs';
 import { multiplayer } from '../lib/multiplayer';
@@ -197,14 +204,77 @@ const aliasCommand: CommandHandler = {
 };
 
 const askCommand: CommandHandler = {
-  meta: { name: 'ask', description: 'Consult the neural AI oracle', usage: 'ask <question>', aliases: ['ai', 'oracle'], minArgs: 1 },
+  meta: {
+    name: 'ask',
+    description: 'Consult the neural AI oracle (multi-provider)',
+    usage: 'ask [@provider] <question>',
+    aliases: ['ai', 'oracle'],
+    minArgs: 1,
+  },
   async execute({ parsed, addLog }) {
-    const prompt = parsed.args.join(' ');
-    addLog(`Oracle ← ${prompt}`, 'system');
+    let args = [...parsed.args];
+    let override: AiProviderId | undefined;
+
+    // ask @groq what is the matrix  |  ask --openai hello
+    if (args[0]?.startsWith('@') || args[0]?.startsWith('--')) {
+      const raw = args[0].replace(/^@/, '').replace(/^--/, '').toLowerCase();
+      if (isValidProvider(raw)) {
+        override = raw;
+        args = args.slice(1);
+      }
+    }
+
+    if (!args.length) {
+      addLog('Usage: ask [@provider] <question>', 'warn');
+      addLog('Providers: offline | groq | openai | gemini | openrouter', 'info');
+      return;
+    }
+
+    const prompt = args.join(' ');
+    const active = override ?? getActiveProvider();
+    addLog(`Oracle [${active}] ← ${prompt}`, 'system');
     addLog('Thinking...', 'info');
-    const reply = await askNeural(prompt);
-    addLog(`Oracle → ${reply}`, 'success');
+    const result = await askNeural(prompt, override);
+    if (result.fallback) {
+      addLog(`Live provider failed or unconfigured — fell back to offline.`, 'warn');
+    }
+    addLog(`Oracle [${result.provider}] → ${result.text}`, 'success');
     useCyberpunkStore.getState().unlockAchievement('first_ask');
+  },
+};
+
+const providerCommand: CommandHandler = {
+  meta: {
+    name: 'provider',
+    description: 'List or switch AI backends',
+    usage: 'provider [offline|groq|openai|gemini|openrouter]',
+    aliases: ['providers', 'model'],
+  },
+  execute({ parsed, addLog }) {
+    const arg = parsed.args[0]?.toLowerCase();
+    if (arg) {
+      if (!isValidProvider(arg)) {
+        addLog(`Unknown provider: ${arg}`, 'error');
+        addLog('Valid: offline | groq | openai | gemini | openrouter', 'info');
+        return;
+      }
+      const info = listProviders().find((p) => p.id === arg)!;
+      if (arg !== 'offline' && !info.configured) {
+        addLog(`${info.label} has no API key in env. Still selecting it — ask will fall back to offline until configured.`, 'warn');
+      }
+      setActiveProvider(arg);
+      addLog(`Active AI provider → ${info.label} (${info.model})`, 'success');
+      return;
+    }
+
+    const active = getActiveProvider();
+    addLog('AI providers:', 'system');
+    for (const p of listProviders()) {
+      const mark = p.id === active ? '●' : '○';
+      const status = p.configured ? 'ready' : 'no key';
+      addLog(`  ${mark} ${p.id.padEnd(11)} ${p.label.padEnd(16)} [${status}] model=${p.model}`, 'info');
+    }
+    addLog('Switch: provider <id>   One-shot: ask @groq <question>', 'system');
   },
 };
 
@@ -384,7 +454,7 @@ export function registerBuiltinCommands(): void {
   [
     helpCommand, clearCommand, statusCommand, scanCommand, echoCommand,
     loginCommand, logoutCommand, whoamiCommand, profileCommand, matrixCommand,
-    panelCommand, windowCommand, aliasCommand, askCommand, saveCommand,
+    panelCommand, windowCommand, aliasCommand, askCommand, providerCommand, saveCommand,
     loadCommand, achievementsCommand, muteCommand, aboutCommand,
     pwdCommand, lsCommand, cdCommand, catCommand, treeCommand,
     themeCommand, presenceCommand, joinCommand, leaveCommand, sayCommand,

@@ -20,7 +20,7 @@
 | **Terminal** | History (↑↓), Tab autocomplete, aliases, color-coded logs |
 | **Commands** | Typed Command Bus — `scan`, `login`, `ask`, `window`, `save`… |
 | **Progression** | Achievements, auth unlocks, persistent history & workspace |
-| **AI** | `ask` oracle — offline by default; optional free Groq API |
+| **AI** | Multi-provider oracle — offline + Groq / OpenAI / Gemini / OpenRouter |
 | **Multiplayer** | `join` grid — Supabase Realtime or simulated peers |
 | **Filesystem** | `ls` `cd` `cat` `tree` `pwd` simulated VFS |
 | **Themes** | `theme cyan|magenta|green` |
@@ -38,14 +38,36 @@ npm run dev
 
 Open **http://localhost:5173**
 
-### Optional: live AI (free)
+### Multi-AI oracle (optional live providers)
 
-1. Create a free key at [console.groq.com](https://console.groq.com)
-2. Copy `.env.example` → `.env`
-3. Set `VITE_GROQ_API_KEY=gsk_...`
-4. Restart dev server → `ask what is the matrix`
+Offline oracle always works. Wire one or more keys in `.env`:
 
-Without a key, `ask` still works with offline cyberpunk replies.
+| Provider | Env var | Notes |
+|----------|---------|--------|
+| **offline** | — | Built-in cyberpunk replies |
+| **groq** | `VITE_GROQ_API_KEY` | Free tier — [console.groq.com](https://console.groq.com) |
+| **openai** | `VITE_OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **gemini** | `VITE_GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com/apikey) |
+| **openrouter** | `VITE_OPENROUTER_API_KEY` | Many models — [openrouter.ai](https://openrouter.ai/keys) |
+| | `VITE_OPENROUTER_MODEL` | Optional model id |
+
+```bash
+cp .env.example .env
+# fill keys, then:
+npm run dev
+```
+
+In the terminal:
+
+```text
+provider              # list backends + active
+provider groq         # switch default
+ask what is the matrix
+ask @gemini explain the core
+ask --openai hello
+```
+
+If a live key is missing or the request fails, the oracle falls back to offline.
 
 ---
 
